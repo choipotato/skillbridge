@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from logging import getLogger
 from select import select
 from socket import AF_INET, SOCK_STREAM, socket
 from sys import platform
-from typing import Any, Iterable, TextIO
+from typing import Any, TextIO
+
+logger = getLogger(__name__)
 
 
 class Channel:
@@ -105,11 +108,20 @@ class TcpChannel(Channel):
         self.socket.close()
         self.socket = self.start()
 
-    def _receive_all(self, remaining: int) -> Iterable[bytes]:
+    def _receive_exactly(self, length: int) -> bytes:
+        chunks = []
+        remaining = length
         while remaining:
             data = self.socket.recv(remaining)
+            if not data:
+                raise RuntimeError("The server unexpectedly died")
+            chunks.append(data)
             remaining -= len(data)
-            yield data
+        return b''.join(chunks)
+
+    def _receive_message(self) -> bytes:
+        length = int(self._receive_exactly(10))
+        return self._receive_exactly(length)
 
     def _send_only(self, data: str) -> None:
         byte = data.encode()
@@ -122,34 +134,21 @@ class TcpChannel(Channel):
         length = f'{len(byte):10}'.encode()
 
         try:
-            self.socket.sendall(length)
-        except (BrokenPipeError, OSError):
-            print("attempting to reconnect")
+            self.socket.sendall(length + byte)
+        except OSError:
+            logger.warning("connection lost, attempting to reconnect")
             self.reconnect()
-            self.socket.sendall(length)
-
-        try:
-            self.socket.sendall(byte)
-        except (BrokenPipeError, OSError):
-            print("attempting to reconnect")
-            self.reconnect()
-            self.socket.sendall(length)
-            self.socket.sendall(byte)
+            self.socket.sendall(length + byte)
 
     def _receive_only(self) -> str:
         try:
-            received_length_raw = self.socket.recv(10)
+            response = self._receive_message().decode()
         except KeyboardInterrupt:
             raise RuntimeError(
                 "Receive aborted, you should restart the skill server or"
                 " call `ws.try_repair()` if you are sure that the response"
                 " will arrive.",
             ) from None
-
-        if not received_length_raw:
-            raise RuntimeError("The server unexpectedly died")
-        received_length = int(received_length_raw)
-        response = b''.join(self._receive_all(received_length)).decode()
 
         return self.decode_response(response)
 
@@ -159,8 +158,7 @@ class TcpChannel(Channel):
 
     def try_repair(self) -> Exception | str:
         try:
-            length = int(self.socket.recv(10))
-            message = b''.join(self._receive_all(length))
+            message = self._receive_message()
         except Exception as e:  # noqa: BLE001
             return e
         return message.decode()
@@ -175,8 +173,7 @@ class TcpChannel(Channel):
         while True:
             read, _, _ = select([self.socket], [], [], 0.1)
             if read:
-                length = int(self.socket.recv(10))
-                self.socket.recv(length)
+                self._receive_message()
             else:
                 break
 

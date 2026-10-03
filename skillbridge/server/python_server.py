@@ -10,7 +10,6 @@ from select import select
 from socketserver import BaseRequestHandler, BaseServer, StreamRequestHandler, ThreadingMixIn
 from sys import argv, platform, stderr, stdin, stdout
 from sys import exit as sys_exit
-from typing import Iterable
 
 LOG_DIRECTORY = Path(getenv('SKILLBRIDGE_LOG_DIRECTORY', '.'))
 LOG_FILE = LOG_DIRECTORY / 'skillbridge_server.log'
@@ -108,21 +107,28 @@ else:
 
 
 class Handler(StreamRequestHandler):
-    def receive_all(self, remaining: int) -> Iterable[bytes]:
+    def receive_exactly(self, length: int) -> bytes | None:
+        chunks = []
+        remaining = length
         while remaining:
             data = self.request.recv(remaining)
+            if not data:
+                return None
+            chunks.append(data)
             remaining -= len(data)
-            yield data
+        return b''.join(chunks)
 
     def handle_one_request(self) -> bool:
-        length = self.request.recv(10)
-        if not length:
+        length = self.receive_exactly(10)
+        if length is None:
             logger.warning(f"client {self.client_address} lost connection")
             return False
-        logger.debug(f"got length {length}")
+        logger.debug(f"got length {length!r}")
 
-        length = int(length)
-        command = b''.join(self.receive_all(length))
+        command = self.receive_exactly(int(length))
+        if command is None:
+            logger.warning(f"client {self.client_address} lost connection")
+            return False
 
         logger.debug(f"received {len(command)} bytes")
 
@@ -136,8 +142,7 @@ class Handler(StreamRequestHandler):
         result = read_from_skill(self.server.skill_timeout).encode()  # type: ignore[attr-defined]
         logger.debug(f"got response from skill {result[:1000]!r}")
 
-        self.request.send(f'{len(result):10}'.encode())
-        self.request.send(result)
+        self.request.sendall(f'{len(result):10}'.encode() + result)
         logger.debug("sent response to client")
 
         return True
