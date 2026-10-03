@@ -53,9 +53,9 @@ After that, these management commands are available in the Skill console.
         You must restart the Skill server before you can continue.
 
     The default python interpreter that is used to start the server is ``"python"``. If your
-    interpreter is called differently (e.g. ``"python3.6"``) you can pass its name with the
+    interpreter is called differently (e.g. ``"python3.13"``) you can pass its name with the
     ``python`` parameter. Your specified interpreter does not need the ``skillbridge`` package.
-    The only requirement is ``python>=3.6``.
+    The only requirement is ``python>=3.9``.
 
     .. note::
 
@@ -84,7 +84,7 @@ After that, these management commands are available in the Skill console.
             pyStartServer ?timeout 10.5
 
             ; use a custom interpreter path
-            pyStartServer ?python "python3.6"
+            pyStartServer ?python "python3.13"
 
 .. function:: pyKillServer()
 
