@@ -1,63 +1,71 @@
 name: Python package
 
-on: [push]
+on:
+  push:
+  pull_request:
 
 jobs:
-  test:
-    name: Lint and Test
+  lint:
+    name: Lint and Type Check
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 4
-      matrix:
-        python-version: [3.8, 3.9, "3.10", 3.11]
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+          activate-environment: true
 
-    - name: Install Package
-      run: |
-        pip install -e .
+      - name: Install package
+        run: uv pip install -e ".[dev]"
 
-    - name: Check with ruff format
-      run: |
-        pip install ruff
-        ruff format --check
+      - name: Check with ruff format
+        run: ruff format --check
 
-    - name: Check with ruff
-      run: |
-        pip install ruff
-        ruff check
+      - name: Check with ruff
+        run: ruff check
 
-    - name: Check with mypy
-      run: |
-        pip install mypy types-dataclasses
-        mypy
+      - name: Check with mypy
+        run: mypy
 
-    - name: Test with pytest
-      run: |
-        pip install -e ".[dev]"
-        pytest
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          activate-environment: true
+
+      - name: Install package
+        run: uv pip install -e ".[dev]"
+
+      - name: Test with pytest
+        run: pytest
 
   build-documentation:
     name: Build Sphinx Documentation
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v4
+      - uses: astral-sh/setup-uv@v7
         with:
-          python-version: 3.11
+          python-version: "3.13"
+          activate-environment: true
 
       - name: Build
         run: |
-          pip install -e ".[doc]"
+          uv pip install -e ".[doc]"
           cd docs
           make clean
           make html

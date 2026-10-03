@@ -1,11 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator, MutableMapping, Sequence
 from typing import (
     Any,
-    Iterable,
-    Iterator,
-    MutableMapping,
-    Sequence,
     cast,
     overload,
 )

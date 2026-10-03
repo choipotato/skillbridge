@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import sys
 import warnings
+from collections.abc import Iterable
 from functools import partial
 from inspect import signature
 from logging import getLogger
 from textwrap import dedent
-from typing import Any, Callable, Iterable, NoReturn, Union, cast
+from typing import Any, Callable, NoReturn, Union, cast
 
 from .channel import Channel, DirectChannel, create_channel_class
 from .functions import FunctionCollection, LiteralRemoteFunction
