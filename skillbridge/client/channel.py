@@ -7,6 +7,8 @@ from socket import AF_INET, SOCK_STREAM, socket
 from sys import platform
 from typing import Any, TextIO
 
+from ..server.protocol import MAX_FRAME_LENGTH, parse_frame_length
+
 logger = getLogger(__name__)
 
 
@@ -76,7 +78,7 @@ class TcpChannel(Channel):
     socket_kind = SOCK_STREAM
 
     def __init__(self, address: Any) -> None:
-        super().__init__(1_000_000)
+        super().__init__(MAX_FRAME_LENGTH)
 
         self.connected = False
         self.address = self.create_address(address)
@@ -120,7 +122,13 @@ class TcpChannel(Channel):
         return b''.join(chunks)
 
     def _receive_message(self) -> bytes:
-        length = int(self._receive_exactly(10))
+        try:
+            length = parse_frame_length(self._receive_exactly(10))
+        except ValueError:
+            # An unread invalid payload cannot be safely treated as a new frame.
+            self.socket.close()
+            self.connected = False
+            raise
         return self._receive_exactly(length)
 
     def _send_only(self, data: str) -> None:

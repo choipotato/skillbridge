@@ -10,6 +10,14 @@ from select import select
 from socketserver import BaseRequestHandler, BaseServer, StreamRequestHandler, ThreadingMixIn
 from sys import argv, platform, stderr, stdin, stdout
 from sys import exit as sys_exit
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING or __package__:
+    from .protocol import parse_frame_length
+else:
+    # Virtuoso starts this file directly with an interpreter that may not have
+    # the skillbridge package installed. Keep the protocol module alongside it.
+    from protocol import parse_frame_length
 
 LOG_DIRECTORY = Path(getenv('SKILLBRIDGE_LOG_DIRECTORY', '.'))
 LOG_FILE = LOG_DIRECTORY / 'skillbridge_server.log'
@@ -125,7 +133,13 @@ class Handler(StreamRequestHandler):
             return False
         logger.debug(f"got length {length!r}")
 
-        command = self.receive_exactly(int(length))
+        try:
+            command_length = parse_frame_length(length)
+        except ValueError:
+            logger.warning(f"client {self.client_address} sent invalid frame length {length!r}")
+            return False
+
+        command = self.receive_exactly(command_length)
         if command is None:
             logger.warning(f"client {self.client_address} lost connection")
             return False

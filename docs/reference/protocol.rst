@@ -84,6 +84,14 @@ grouped together. As TCP has no concept of messages, the length of the message i
 followed by the message itself. As the length of the length can also vary, it is fixed to
 exactly 10 digits. Smaller lengths must be padded with either zeros or spaces.
 
+Both socket receivers accept payload lengths from 0 through 1,000,000 bytes,
+excluding the 10-byte header. This includes the status prefix in a server response.
+Negative, oversized, and nonnumeric lengths are rejected before reading the payload.
+A server rejects the connection; a client closes its socket and raises ``ValueError``.
+EOF before the complete header or payload also fails the frame. The client's configurable
+``max_transmission_length`` controls outgoing commands only; it does not change
+the protocol's receive limit.
+
 See the following examples:
 
 >>> encode("1 + 2")
