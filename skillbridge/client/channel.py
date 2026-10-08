@@ -3,13 +3,16 @@ from __future__ import annotations
 from contextlib import suppress
 from logging import getLogger
 from select import select
-from socket import AF_INET, SOCK_STREAM, socket
+from socket import AF_INET, MSG_PEEK, SOCK_STREAM, socket
 from sys import platform
 from typing import Any, TextIO
 
 from ..server.protocol import MAX_FRAME_LENGTH, parse_frame_length
 
 logger = getLogger(__name__)
+
+PORT_RANGE_MIN = 0
+PORT_RANGE_MAX = 0xFFFF
 
 
 class Channel:
@@ -142,6 +145,12 @@ class TcpChannel(Channel):
         length = f'{len(byte):10}'.encode()
 
         try:
+            # A TCP write may succeed after the old peer has closed. Detect an
+            # already received EOF before sending, without replaying a request
+            # after an ambiguous failure while waiting for its response.
+            readable, _, _ = select([self.socket], [], [], 0)
+            if readable and not self.socket.recv(1, MSG_PEEK):
+                raise ConnectionResetError('Peer closed the connection')
             self.socket.sendall(length + byte)
         except OSError:
             logger.warning("connection lost, attempting to reconnect")
@@ -186,10 +195,10 @@ class TcpChannel(Channel):
                 break
 
 
-if platform == 'win32':
+def create_channel_class(force_tcp: bool = False) -> type[TcpChannel]:
+    if platform == 'win32' or force_tcp:
 
-    def create_channel_class() -> type[TcpChannel]:
-        class WindowsChannel(TcpChannel):
+        class CustomTcpChannel(TcpChannel):
             def configure(self, sock: socket) -> None:
                 try:
                     from socket import (  # type: ignore[attr-defined]  # noqa: PLC0415
@@ -204,23 +213,32 @@ if platform == 'win32':
                     pass
 
             @staticmethod
-            def create_address(id_: Any) -> Any:
-                port = 7777 if id_ is None else id_
-                return 'localhost', port
+            def create_address(id_: str | int | None) -> tuple[str, int]:
+                if id_ is None:
+                    return 'localhost', 7777
 
-        return WindowsChannel
+                id_ = str(id_)
+                if not (
+                    id_.isascii()
+                    and id_.isdecimal()
+                    and PORT_RANGE_MIN <= int(id_) <= PORT_RANGE_MAX
+                ):
+                    raise ValueError(
+                        f"TCP server requires a numeric id in range 0-65535 (given=`{id_}`)"
+                    )
 
-else:
+                return 'localhost', int(id_)
 
-    def create_channel_class() -> type[TcpChannel]:
-        from socket import AF_UNIX  # noqa: PLC0415
+        return CustomTcpChannel
 
-        class UnixChannel(TcpChannel):
-            address_family = AF_UNIX
+    from socket import AF_UNIX  # noqa: PLC0415
 
-            @staticmethod
-            def create_address(id_: Any) -> Any:
-                id_ = 'default' if id_ is None else id_
-                return f'/tmp/skill-server-{id_}.sock'
+    class CustomUnixChannel(TcpChannel):
+        address_family = AF_UNIX
 
-        return UnixChannel
+        @staticmethod
+        def create_address(id_: Any) -> Any:
+            id_ = 'default' if id_ is None else id_
+            return f'/tmp/skill-server-{id_}.sock'
+
+    return CustomUnixChannel

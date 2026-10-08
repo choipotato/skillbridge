@@ -13,7 +13,7 @@ into your terminal to get the correct paths).
 
 After that, these management commands are available in the Skill console.
 
-.. function:: pyStartServer(id="default" logLevel="INFO" singleMode=nil timeout=nil python="python")
+.. function:: pyStartServer(id="default" logLevel="INFO" singleMode=nil timeout=nil python="python" forceTcp=nil)
 
     This starts the python server. If you are only running a single instance of
     Virtuoso you can use the default id. For more instances, each server needs its own
@@ -56,6 +56,13 @@ After that, these management commands are available in the Skill console.
     interpreter is called differently (e.g. ``"python3.13"``) you can pass its name with the
     ``python`` parameter. Your specified interpreter does not need the ``skillbridge`` package.
     The only requirement is ``python>=3.9``.
+
+    Use ``?forceTcp t`` to select TCP sockets on Unix systems. Connect from
+    Python with ``Workspace.open("56789", force_tcp=True)`` or from the CLI
+    with ``skillbridge shell --id 56789 --force-tcp``.
+
+    .. warning::
+        Make sure to use a numeric id, i.e. ``?id "56789"``, that is within the TCP port range (0-65535)
 
     .. note::
 
