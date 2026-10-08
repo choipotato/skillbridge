@@ -10,17 +10,18 @@ from skillbridge.server import python_server
 
 
 class Virtuoso(Thread):
-    def __init__(self, socket) -> None:
+    def __init__(self, workspace_id: str, force_tcp: bool = False) -> None:
         super().__init__(daemon=True)
         self.daemon = True
 
+        self.force_tcp = force_tcp
         self.queue = Queue()
         self.questions = []
         self.should_run = True
         self.server = None
         self.running = False
         self.pin = None
-        self.socket = socket
+        self.workspace_id = workspace_id
 
     def wait_until_ready(self):
         while not self.running:
@@ -30,8 +31,9 @@ class Virtuoso(Thread):
     def _create_subprocess(self):
         script = python_server.__file__
         master, slave = openpty()
+        force_args = ["--force-tcp"] if self.force_tcp else []
         self.server = Popen(
-            [executable, script, self.socket, "DEBUG", '--notify'],
+            [executable, script, self.workspace_id, "DEBUG", '--notify', *force_args],
             stdin=slave,
             stdout=PIPE,
             stderr=STDOUT,

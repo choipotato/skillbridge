@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, NewType, Tuple, Union
+from typing import TYPE_CHECKING, Any, NamedTuple, NewType, Union
 
 if TYPE_CHECKING:  # pragma: no cover
     from typing_extensions import Protocol, TypeAlias
@@ -58,15 +58,15 @@ else:
     Skill = Any
 
 
-class SkillList(List[Skill]):
+class SkillList(list[Skill]):  # noqa: FURB189
     pass
 
 
-class SkillTuple(Tuple[Skill, ...]):
+class SkillTuple(tuple[Skill, ...]):
     __slots__ = ()
 
 
-class SkillDict(Dict[str, Skill]):
+class SkillDict(dict[str, Skill]):  # noqa: FURB189
     pass
 
 

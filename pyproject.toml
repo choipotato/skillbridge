@@ -10,17 +10,19 @@ authors = [
 ]
 description = "A seamless Python remote bridge to Cadence's Skill in Virtuoso"
 readme = {file = "README.md", content-type = "text/markdown"}
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = []
 urls = {Repository = "https://github.com/unihd-cag/skillbridge"}
 license = {file = "LICENSE"}
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Information Technology",
@@ -37,10 +39,10 @@ version = {attr = "skillbridge.version.__version__"}
 [project.optional-dependencies]
 dev = [
     "pytest",
-    "pytest-coverage",
+    "pytest-cov",
     "hypothesis",
     "mypy",
-    "ruff>=0.2.1",
+    "ruff==0.15.22",
 ]
 doc = [
     "sphinx"
@@ -53,13 +55,6 @@ skillbridge = "skillbridge.__main__:main"
 include = ["skillbridge*"]
 namespaces = false
 
-[tool.black]
-skip-string-normalization = true
-target-version = ["py38"]
-include = ".*[.]py$"
-exclude = "env"
-line-length = 100
-
 [tool.pytest.ini_options]
 addopts = "--cov=skillbridge --cov-report=html --cov-report=term:skip-covered --cov-branch --no-cov-on-fail"
 
@@ -68,7 +63,6 @@ precision = 2
 exclude_also = ["raise NotImplementedError"]
 
 [tool.mypy]
-python_version = "3.8"
 files = "skillbridge"
 pretty = true
 show_error_context = true
@@ -104,7 +98,7 @@ strict_equality = true
 preview = true
 exclude = ["venv", "env", "build"]
 line-length = 100
-target-version = "py38"
+target-version = "py39"
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -120,10 +114,10 @@ ignore = [
     "G004",
     "ISC001",
     "N999",
-    "PD901",
     "PLR0911", "PLR6301",
     "PLW1641", "PLW3201",
     "PT001", "PT013",
+    "RUF105", "RUF201",
     "PTH123",
     "S101", "S108", "S310", "S311", "S404",
     "T201",
@@ -133,6 +127,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"skillbridge/__init__.py" = [
+    "RUF067",
+]
 "tests/*" = [
     "ANN",
     "ARG001",

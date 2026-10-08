@@ -1,28 +1,33 @@
-import contextlib
-import warnings
-from pathlib import Path
+from __future__ import annotations
 
-from pytest import fixture, raises
+import warnings
+from collections.abc import Iterable
+from typing import Literal
+
+from _pytest.fixtures import SubRequest
+from pytest import fixture, mark, raises
 
 from skillbridge import Workspace, current_workspace, loop_var
 from skillbridge.client.channel import Channel, create_channel_class
 from skillbridge.client.objects import RemoteObject
 from tests.virtuoso import Virtuoso
 
-WORKSPACE_ID = '__test__'
+WORKSPACE_ID = "8976"
 channel_class = create_channel_class()
+tcp_channel_class = create_channel_class(force_tcp=True)
 
 
-def _cleanup():
-    path = channel_class.create_address(WORKSPACE_ID)
-    if isinstance(path, str):
-        with contextlib.suppress(FileNotFoundError):
-            Path(path).unlink()
+ComType = Literal["unix", "tcp"]
 
 
-@fixture()
-def server() -> Virtuoso:
-    v = Virtuoso(WORKSPACE_ID)
+@fixture(params=['unix', 'tcp'])
+def com_type(request: SubRequest) -> ComType:
+    return request.param
+
+
+@fixture
+def server(com_type: ComType) -> Iterable[Virtuoso]:
+    v = Virtuoso(WORKSPACE_ID, force_tcp=com_type == "tcp")
     v.start()
     v.wait_until_ready()
     yield v
@@ -30,8 +35,8 @@ def server() -> Virtuoso:
 
 
 @fixture
-def channel() -> Channel:
-    c = channel_class(WORKSPACE_ID)
+def channel(com_type: ComType) -> Iterable[Channel]:
+    c = (tcp_channel_class if com_type == "tcp" else channel_class)(WORKSPACE_ID)
     try:
         yield c
     finally:
@@ -39,10 +44,10 @@ def channel() -> Channel:
 
 
 @fixture
-def ws() -> Workspace:
+def ws(com_type: ComType) -> Iterable[Workspace]:
     for _ in range(10):
         try:
-            ws = Workspace.open(WORKSPACE_ID)
+            ws = Workspace.open(WORKSPACE_ID, force_tcp=com_type == "tcp")
         except BlockingIOError:
             continue
         else:
@@ -54,39 +59,41 @@ def ws() -> Workspace:
     ws.close()
 
 
-def test_channel_cannot_connect_without_server():
+@mark.parametrize("use_tcp", argvalues=[False, True], ids=["unix", "tcp"])
+def test_channel_cannot_connect_without_server(use_tcp: bool):
     with raises(Exception):
-        channel_class(WORKSPACE_ID)
+        tcp_channel_class(WORKSPACE_ID) if use_tcp else channel_class(WORKSPACE_ID)
 
 
-def test_reconnect():
-    first = Virtuoso(WORKSPACE_ID)
+@mark.parametrize("use_tcp", argvalues=[False, True], ids=["unix", "tcp"])
+def test_reconnect(use_tcp: bool):
+    first = Virtuoso(WORKSPACE_ID, force_tcp=use_tcp)
     first.start()
     first.wait_until_ready()
 
-    c = channel_class(WORKSPACE_ID)
-    first.answer_success('pong')
+    c = (tcp_channel_class if use_tcp else channel_class)(WORKSPACE_ID)
+    first.answer_success("pong")
     try:
-        assert c.send('ping') == 'pong\n'
-        assert first.last_question == 'ping'
+        assert c.send("ping") == "pong\n"
+        assert first.last_question == "ping"
     finally:
         first.stop()
 
-    second = Virtuoso(WORKSPACE_ID)
+    second = Virtuoso(WORKSPACE_ID, force_tcp=use_tcp)
     second.start()
     second.wait_until_ready()
 
-    second.answer_success('toc')
+    second.answer_success("toc")
 
     try:
-        assert c.send('tic') == 'toc\n'
-        assert second.last_question == 'tic'
+        assert c.send("tic") == "toc\n"
+        assert second.last_question == "tic"
     finally:
         second.stop()
 
 
 def test_channel_connects(server):
-    c = channel_class(WORKSPACE_ID)
+    c = (tcp_channel_class if server.force_tcp else channel_class)(WORKSPACE_ID)
     assert c.connected
     c.close()
 

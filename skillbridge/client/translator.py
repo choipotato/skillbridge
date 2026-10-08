@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from json import dumps, loads
-from re import findall, sub
-from typing import Any, Callable, Iterable, Match, NoReturn, cast
+from re import Match, findall, sub
+from typing import Any, Callable, NoReturn, cast
 from warnings import warn_explicit
 
 from .hints import Skill, SkillCode, Symbol

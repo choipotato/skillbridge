@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from logging import getLogger
 from select import select
-from socket import AF_INET, SOCK_STREAM, socket
+from socket import AF_INET, MSG_PEEK, SOCK_STREAM, socket
 from sys import platform
-from typing import Any, Iterable, TextIO
+from typing import Any, TextIO
+
+from ..server.protocol import MAX_FRAME_LENGTH, parse_frame_length
+
+logger = getLogger(__name__)
+
+PORT_RANGE_MIN = 0
+PORT_RANGE_MAX = 0xFFFF
 
 
 class Channel:
@@ -73,7 +81,7 @@ class TcpChannel(Channel):
     socket_kind = SOCK_STREAM
 
     def __init__(self, address: Any) -> None:
-        super().__init__(1_000_000)
+        super().__init__(MAX_FRAME_LENGTH)
 
         self.connected = False
         self.address = self.create_address(address)
@@ -105,11 +113,26 @@ class TcpChannel(Channel):
         self.socket.close()
         self.socket = self.start()
 
-    def _receive_all(self, remaining: int) -> Iterable[bytes]:
+    def _receive_exactly(self, length: int) -> bytes:
+        chunks = []
+        remaining = length
         while remaining:
             data = self.socket.recv(remaining)
+            if not data:
+                raise RuntimeError("The server unexpectedly died")
+            chunks.append(data)
             remaining -= len(data)
-            yield data
+        return b''.join(chunks)
+
+    def _receive_message(self) -> bytes:
+        try:
+            length = parse_frame_length(self._receive_exactly(10))
+        except ValueError:
+            # An unread invalid payload cannot be safely treated as a new frame.
+            self.socket.close()
+            self.connected = False
+            raise
+        return self._receive_exactly(length)
 
     def _send_only(self, data: str) -> None:
         byte = data.encode()
@@ -122,34 +145,27 @@ class TcpChannel(Channel):
         length = f'{len(byte):10}'.encode()
 
         try:
-            self.socket.sendall(length)
-        except (BrokenPipeError, OSError):
-            print("attempting to reconnect")
+            # A TCP write may succeed after the old peer has closed. Detect an
+            # already received EOF before sending, without replaying a request
+            # after an ambiguous failure while waiting for its response.
+            readable, _, _ = select([self.socket], [], [], 0)
+            if readable and not self.socket.recv(1, MSG_PEEK):
+                raise ConnectionResetError('Peer closed the connection')
+            self.socket.sendall(length + byte)
+        except OSError:
+            logger.warning("connection lost, attempting to reconnect")
             self.reconnect()
-            self.socket.sendall(length)
-
-        try:
-            self.socket.sendall(byte)
-        except (BrokenPipeError, OSError):
-            print("attempting to reconnect")
-            self.reconnect()
-            self.socket.sendall(length)
-            self.socket.sendall(byte)
+            self.socket.sendall(length + byte)
 
     def _receive_only(self) -> str:
         try:
-            received_length_raw = self.socket.recv(10)
+            response = self._receive_message().decode()
         except KeyboardInterrupt:
             raise RuntimeError(
                 "Receive aborted, you should restart the skill server or"
                 " call `ws.try_repair()` if you are sure that the response"
                 " will arrive.",
             ) from None
-
-        if not received_length_raw:
-            raise RuntimeError("The server unexpectedly died")
-        received_length = int(received_length_raw)
-        response = b''.join(self._receive_all(received_length)).decode()
 
         return self.decode_response(response)
 
@@ -159,8 +175,7 @@ class TcpChannel(Channel):
 
     def try_repair(self) -> Exception | str:
         try:
-            length = int(self.socket.recv(10))
-            message = b''.join(self._receive_all(length))
+            message = self._receive_message()
         except Exception as e:  # noqa: BLE001
             return e
         return message.decode()
@@ -175,16 +190,15 @@ class TcpChannel(Channel):
         while True:
             read, _, _ = select([self.socket], [], [], 0.1)
             if read:
-                length = int(self.socket.recv(10))
-                self.socket.recv(length)
+                self._receive_message()
             else:
                 break
 
 
-if platform == 'win32':
+def create_channel_class(force_tcp: bool = False) -> type[TcpChannel]:
+    if platform == 'win32' or force_tcp:
 
-    def create_channel_class() -> type[TcpChannel]:
-        class WindowsChannel(TcpChannel):
+        class CustomTcpChannel(TcpChannel):
             def configure(self, sock: socket) -> None:
                 try:
                     from socket import (  # type: ignore[attr-defined]  # noqa: PLC0415
@@ -199,23 +213,32 @@ if platform == 'win32':
                     pass
 
             @staticmethod
-            def create_address(id_: Any) -> Any:
-                port = 7777 if id_ is None else id_
-                return 'localhost', port
+            def create_address(id_: str | int | None) -> tuple[str, int]:
+                if id_ is None:
+                    return 'localhost', 7777
 
-        return WindowsChannel
+                id_ = str(id_)
+                if not (
+                    id_.isascii()
+                    and id_.isdecimal()
+                    and PORT_RANGE_MIN <= int(id_) <= PORT_RANGE_MAX
+                ):
+                    raise ValueError(
+                        f"TCP server requires a numeric id in range 0-65535 (given=`{id_}`)"
+                    )
 
-else:
+                return 'localhost', int(id_)
 
-    def create_channel_class() -> type[TcpChannel]:
-        from socket import AF_UNIX  # noqa: PLC0415
+        return CustomTcpChannel
 
-        class UnixChannel(TcpChannel):
-            address_family = AF_UNIX
+    from socket import AF_UNIX  # noqa: PLC0415
 
-            @staticmethod
-            def create_address(id_: Any) -> Any:
-                id_ = 'default' if id_ is None else id_
-                return f'/tmp/skill-server-{id_}.sock'
+    class CustomUnixChannel(TcpChannel):
+        address_family = AF_UNIX
 
-        return UnixChannel
+        @staticmethod
+        def create_address(id_: Any) -> Any:
+            id_ = 'default' if id_ is None else id_
+            return f'/tmp/skill-server-{id_}.sock'
+
+    return CustomUnixChannel
